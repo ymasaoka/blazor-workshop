@@ -120,11 +120,19 @@ form {
         font-weight: 700;
         line-height: 0.7rem;
         margin-top: 0.5rem;
+        color: white;
+        font-size: 1rem;
     }
 
     .user-info a {
         color: #fff2cc;
         font-size: 0.8rem;
+    }
+
+    .user-info button.sign-out {
+        color: #fff2cc;
+        font-size: 0.8rem;
+        padding: 0;
     }
 
 .pizza-cards {
@@ -546,16 +554,6 @@ a.sign-in {
         background-color: rgba(255,255,255,0.3);
         color: #fff2cc;
         border-color: #fff2cc;
-    }
-
-.user-info a.sign-out {
-    color: #fff2cc;
-    font-size: 0.8rem;
-    cursor: pointer;
-}
-
-    .user-info a.sign-out:hover {
-        text-decoration: underline;
     }
 
 input[type=range] {
