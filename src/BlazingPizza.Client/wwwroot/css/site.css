@@ -36,9 +36,13 @@ form {
 }
 
 .logo {
-    margin-right: 3rem;
-    width: 9rem;
+    display: flex;
 }
+
+    .logo > img {
+        margin-right: 3rem;
+        width: 9rem;
+    }
 
 .content {
     display: flex;

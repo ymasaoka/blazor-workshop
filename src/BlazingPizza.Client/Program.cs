@@ -18,7 +18,11 @@ namespace BlazingPizza.Client
 
             // Add auth services
             builder.Services.AddRemoteAuthentication<PizzaAuthenticationState, ApiAuthorizationProviderOptions>();
-            builder.Services.AddApiAuthorization();
+            builder.Services.AddApiAuthorization(options =>
+            {
+                options.AuthenticationPaths.LogOutSucceededPath = "";
+                options.ProviderOptions.ConfigurationEndpoint = "_configuration/BlazingPizza.Client"; // temporary workaround
+            });
 
             await builder.Build().RunAsync();
         }

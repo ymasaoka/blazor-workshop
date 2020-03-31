@@ -7,7 +7,6 @@
     TAuthenticationState="PizzaAuthenticationState"
     AuthenticationState="RemoteAuthenticationState"
     OnLogInSucceeded="RestorePizza"
-    OnLogOutSucceeded="ReturnHome"
     Action="@Action" />
 
 @code{
@@ -30,10 +29,5 @@
         {
             OrderState.ReplaceOrder(pizzaState.Order);
         }
-    }
-
-    private void ReturnHome(PizzaAuthenticationState state)
-    {
-        state.ReturnUrl = "";
     }
 }
