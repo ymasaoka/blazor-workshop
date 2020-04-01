@@ -37,6 +37,24 @@
         _ = RequestNotificationSubscriptionAsync();
     }
 
+    async Task RequestNotificationSubscriptionAsync()
+    {
+        var tokenResponse = await TokenProvider.RequestAccessToken();
+        if (tokenResponse.TryGetToken(out var token))
+        {
+            var subscription = await JSRuntime.InvokeAsync<NotificationSubscription>("blazorPushNotifications.requestSubscription");
+            if (subscription != null)
+            {
+                var client = CreateAuthenticatedClient(token);
+                await client.PutJsonAsync<object>("notifications/subscribe", subscription);
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo(tokenResponse.RedirectUrl);
+        }
+    }
+
     async Task PlaceOrder()
     {
         isSubmitting = true;
@@ -54,24 +72,6 @@
             finally
             {
                 isSubmitting = false;
-            }
-        }
-        else
-        {
-            NavigationManager.NavigateTo(tokenResponse.RedirectUrl);
-        }
-    }
-
-    async Task RequestNotificationSubscriptionAsync()
-    {
-        var tokenResponse = await TokenProvider.RequestAccessToken();
-        if (tokenResponse.TryGetToken(out var token))
-        {
-            var subscription = await JSRuntime.InvokeAsync<NotificationSubscription>("blazorPushNotifications.requestSubscription");
-            if (subscription != null)
-            {
-                var client = CreateAuthenticatedClient(token);
-                await client.PutJsonAsync<object>("notifications/subscribe", subscription);
             }
         }
         else

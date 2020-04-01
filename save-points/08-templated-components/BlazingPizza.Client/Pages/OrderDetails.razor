@@ -1,7 +1,8 @@
 ﻿@page "/myorders/{orderId:int}"
 @attribute [Authorize]
 @using System.Threading
-@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject IAccessTokenProvider TokenProvider
 @implements IDisposable
 
 <div class="main">
@@ -61,7 +62,12 @@
             try
             {
                 invalidOrder = false;
-                orderWithStatus = await HttpClient.GetJsonAsync<OrderWithStatus>($"orders/{OrderId}");
+                var tokenResponse = await TokenProvider.RequestAccessToken();
+                if (tokenResponse.TryGetToken(out var token))
+                {
+                    var client = CreateAuthenticatedClient(token);
+                    orderWithStatus = await client.GetJsonAsync<OrderWithStatus>($"orders/{OrderId}");
+                }
             }
             catch (Exception ex)
             {
@@ -74,6 +80,14 @@
 
             await Task.Delay(4000);
         }
+    }
+
+    private HttpClient CreateAuthenticatedClient(AccessToken token)
+    {
+        var client = new HttpClient();
+        client.BaseAddress = new Uri(NavigationManager.BaseUri);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
+        return client;
     }
 
     void IDisposable.Dispose()

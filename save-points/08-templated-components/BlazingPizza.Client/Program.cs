@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using System.Threading.Tasks;
@@ -14,11 +15,14 @@ namespace BlazingPizza.Client
 
             builder.Services.AddBaseAddressHttpClient();
             builder.Services.AddScoped<OrderState>();
-
+            
             // Add auth services
-            builder.Services.AddOptions();
-            builder.Services.AddAuthorizationCore();
-            builder.Services.AddScoped<AuthenticationStateProvider, ServerAuthenticationStateProvider>();
+            builder.Services.AddRemoteAuthentication<PizzaAuthenticationState, ApiAuthorizationProviderOptions>();
+            builder.Services.AddApiAuthorization(options =>
+            {
+                options.AuthenticationPaths.LogOutSucceededPath = "";
+                options.ProviderOptions.ConfigurationEndpoint = "_configuration/BlazingPizza.Client"; // temporary workaround
+            });
 
             await builder.Build().RunAsync();
         }

@@ -29,53 +29,98 @@ If you try to run your application now, you'll find that you can no longer place
 
 ## Tracking authentication state
 
-The client code needs a way to track whether the user is logged in, and if so *which* user is logged in, so it can influence how the UI behaves. Blazor has a built-in DI service for doing this: the `AuthenticationStateProvider`.
+The client code needs a way to track whether the user is logged in, and if so *which* user is logged in, so it can influence how the UI behaves. Blazor has a built-in DI service for doing this: the `AuthenticationStateProvider`. Blazor provides an implementation of the `AuthenticationStateProvider` service and other related services and components based on [OpenID Connect](https://openid.net/connect/) that handle all the details of establishing who the user is. These services and components are provided in the Microsoft.AspNetCore.Components.WebAssembly.Authentication package, which has already been added to the client project for you.
 
-Blazor Server comes with a built-in `AuthenticationStateProvider` that hooks into server-side authentication features to determine who's logged in. But Blazor pizza is a Blazor WebAssembly app that runs on the client, so you'll need to implement your own `AuthenticationStateProvider` that gets the login state somehow.
+In broad terms, the authentication process implemented by these services looks like this:
 
-To start, create a new class named `ServerAuthenticationStateProvider` in the root of your `BlazingPizza.Client` project:
+* When a user attempts to login or tries to access a protected resource, the user is redirected to the app's login page (`/authentication/login`).
+* In the login page, the app prepares to redirect to the authorization endpoint of the configured identity provider. The endpoint is responsible for determining whether the user is authenticated and for issuing one or more tokens in response. The app provides a login callback to receive the authentication response.
+  * If the user isn't authenticated, the user is first redirected to the underlying authentication system (typically ASP.NET Core Identity).
+  * Once the user is authenticated, the authorization endpoint generates the appropriate tokens and redirects the browser back to the login callback endpoint (`/authentication/login-callback`).
+* When the Blazor WebAssembly app loads the login callback endpoint (`/authentication/login-callback`), the authentication response is processed.
+  * If the authentication process completes successfully, the user is authenticated and optionally sent back to the original protected URL that the user requested.
+  * If the authentication process fails for any reason, the user is sent to the login failed page (`/authentication/login-failed`), and an error is displayed.
 
-```cs
-using System.Security.Claims;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Components.Authorization;
+See also [Secure ASP.NET Core Blazor WebAssembly](https://docs.microsoft.com/aspnet/core/security/blazor/webassembly/) for additional details.
 
-namespace BlazingPizza.Client
-{
-    public class ServerAuthenticationStateProvider : AuthenticationStateProvider
-    {
-        public override async Task<AuthenticationState> GetAuthenticationStateAsync()
-        {
-            // Currently, this returns fake data
-            // In a moment, we'll get real data from the server
-            var claim = new Claim(ClaimTypes.Name, "Fake user");
-            var identity = new ClaimsIdentity(new[] { claim }, "serverauth");
-            return new AuthenticationState(new ClaimsPrincipal(identity));
-        }
-    }
-}
-```
+To enable the authentication services, add a call to `AddApiAuthorization` in *Program.cs* in the client project:
 
-... then register this as a DI service in `Program.cs`:
-
-```cs
+```csharp
 public static async Task Main(string[] args)
 {
     var builder = WebAssemblyHostBuilder.CreateDefault(args);
-    
     builder.RootComponents.Add<App>("app");
 
     builder.Services.AddBaseAddressHttpClient();
     builder.Services.AddScoped<OrderState>();
 
     // Add auth services
-    builder.Services.AddOptions();
-    builder.Services.AddAuthorizationCore();
-    builder.Services.AddScoped<AuthenticationStateProvider, ServerAuthenticationStateProvider>();
+    builder.Services.AddApiAuthorization();
 
     await builder.Build().RunAsync();
 }
 ```
+
+Also add the following `script` tag in *index.html* after the `script` tag for *blazor.webassembly.js*:
+
+```html
+<script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>
+```
+
+The added services will be configured by default to use an identity provider on the same origin as the app. The server project for the Blazing Pizza app has already been setup to use [IdentityServer](https://identityserver.io/) as the identity provider and ASP.NET Core Identity for the authentication system:
+
+*Startup.cs*
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddMvc()
+        .AddNewtonsoftJson();
+
+    services.AddDbContext<PizzaStoreContext>(options => 
+        options.UseSqlite("Data Source=pizza.db"));
+
+    services.AddDefaultIdentity<PizzaStoreUser>(options => options.SignIn.RequireConfirmedAccount = true)
+        .AddEntityFrameworkStores<PizzaStoreContext>();
+
+    services.AddIdentityServer()
+        .AddApiAuthorization<PizzaStoreUser, PizzaStoreContext>();
+
+    services.AddAuthentication()
+        .AddIdentityServerJwt();
+}
+```
+
+The server has also already been configured to issue tokens to the client app:
+
+*appsettings.json*
+
+```json
+"IdentityServer": {
+  "Clients": {
+    "BlazingPizza.Client": {
+      "Profile": "IdentityServerSPA"
+    }
+  }
+}
+```
+
+To orchestrate the authentication flow, add an `Authentication` component to the *Pages* directory in the client project:
+
+*Pages/Authentication.razor*
+
+```razor
+@page "/authentication/{action}"
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+<RemoteAuthenticatorView Action="@Action" />
+
+@code{
+    [Parameter]
+    public string Action { get; set; }
+}
+```
+
+The `Authentication` component is setup to handle the various authentication actions using the built-in `RemoteAuthenticatorView` component. The `Action` parameter is bound to the `{action}` route value, which is then passed to the `RemoteAuthenticatorView` component to handle.
 
 To flow the authentication state information through your app, you need to add one more component. In `App.razor`, surround the entire `<Router>` with a `<CascadingAuthenticationState>`:
 
@@ -96,6 +141,9 @@ Finally, you're ready to display something in the UI!
 Create a new component called `LoginDisplay` in the client project's `Shared` folder, containing:
 
 ```html
+@inject NavigationManager Navigation
+@inject SignOutSessionStateManager SignOutManager
+
 <div class="user-info">
     <AuthorizeView>
         <Authorizing>
@@ -104,20 +152,31 @@ Create a new component called `LoginDisplay` in the client project's `Shared` fo
         <Authorized>
             <img src="img/user.svg" />
             <div>
-                <span class="username">@context.User.Identity.Name</span>
-                <a class="sign-out" href="user/signout">Sign out</a>
+                <a href="authentication/profile" class="username">@context.User.Identity.Name</a>
+                <button class="btn btn-link sign-out" @onclick="BeginSignOut">Sign out</button>
             </div>
         </Authorized>
         <NotAuthorized>
-            <a class="sign-in" href="user/signin">Sign in</a>
+            <a class="sign-in" href="authentication/register">Register</a>
+            <a class="sign-in" href="authentication/login">Log in</a>
         </NotAuthorized>
     </AuthorizeView>
 </div>
+
+@code{
+    async Task BeginSignOut()
+    {
+        await SignOutManager.SetSignOutState();
+        Navigation.NavigateTo("authentication/logout");
+    }
+}
 ```
 
 `<AuthorizeView>` is a built-in component that displays different content depending on whether the user meets specified authorization conditions. We didn't specify any authorization conditions, so by default it considers the user authorized if they are authenticated (logged in), otherwise not authorized.
 
 You can use `<AuthorizeView>` anywhere you need UI content to vary by authorization state, such as controlling the visibility of menu entries based on a user's roles. In this case, we're using it to tell the user who they are, and conditionally show either a "log in" or "log out" link as applicable.
+
+The links to register, log in, and see the user profile are normal links that navigate to the `Authentication` component. The sign out link is a button and has additional logic to prevent forged request logging the user out. Using a button ensures that the sign out can only be triggered by a user action, and the `SignOutSessionStateManager` service maintains state across the sign out flow to ensure the whole flow originated with a user action.
 
 Let's put the `LoginDisplay` in the UI somewhere. Open `MainLayout`, and update the `<div class="top-bar">` as follows:
 
@@ -129,71 +188,10 @@ Let's put the `LoginDisplay` in the UI somewhere. Open `MainLayout`, and update 
 </div>
 ```
 
-Because you're supplying fake login information, the user will appear to be signed in as "Fake user", and clicking the "sign out" link will not change that:
+## Register a user and log in
 
-![Fake user](https://user-images.githubusercontent.com/1874516/77243292-a6d61a00-6bc5-11ea-8250-d841988b6dda.png)
+Try it out now.
 
-Note that you still can't retrieve any order information. The server won't be fooled by the fake login information.
-
-## Signing in for real with Twitter
-
-Your application is going to use cookie-based authentication. The mechanism is as follows:
-
-1. The client asks the server whether the user is logged in.
-1. The server uses ASP.NET Core's built-in cookie-based authentication system to track logins, so it can respond to the client's query with the authenticated username.
-1. If the client asks the server to begin the sign-in flow, the server uses ASP.NET Core's built-in federated OAuth support to redirect to Twitter's login page. However you could easily reconfigure this to use Google or Facebook login, or even to use ASP.NET Core's built in *Identity* system, which is a standalone user database.
-1. After the user logs in with Twitter or another authentication provider, the server sets an authentication cookie so that subsequent queries in step 1 will return the authenticated username.
-1. The client app restarts, and this time shows whatever username the server returns.
-1. Subsequent HTTP requests to API endpoints on `OrdersController` will include the cookie, so the server will be able to authorize the request.
-1. If the client wants the user to log out, it calls an endpoint on the server that will clear the authentication cookie.
-
-You'll notice that, in `LoginDisplay`, the "sign in" and "sign out" links take you to server-side endpoints implemented on `UserController` in `BlazingPizza.Server`. Have a look at the code in that controller and see how it uses ASP.NET Core's server-side APIs to handle the redirections.
-
-What's missing currently is having your client-side app query the server to ask for the current login state. Go back to `ServerAuthenticationStateProvider`, and modify its logic as follows:
-
-```cs
-using System.Net.Http;
-using System.Security.Claims;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.Authorization;
-
-namespace BlazingPizza.Client
-{
-    public class ServerAuthenticationStateProvider : AuthenticationStateProvider
-    {
-        private readonly HttpClient _httpClient;
-
-        public ServerAuthenticationStateProvider(HttpClient httpClient)
-        {
-            _httpClient = httpClient;
-        }
-
-        public override async Task<AuthenticationState> GetAuthenticationStateAsync()
-        {
-            var userInfo = await _httpClient.GetJsonAsync<UserInfo>("user");
-
-            var identity = userInfo.IsAuthenticated
-                ? new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, userInfo.Name) }, "serverauth")
-                : new ClaimsIdentity();
-
-            return new AuthenticationState(new ClaimsPrincipal(identity));
-        }
-    }
-}
-```
-
-Try it out now. Initially, the request to `/user` will return data saying you're logged out, so that's what your authentication state provider will flow through the UI &mdash; you'll see a *Sign in* link.
-
-When you click "sign in", you should actually be able to sign in with Twitter and then see your username in the UI.
-
-> Tip: If after logging in, the flow doesn't complete, it probably means your application is running on the wrong port. Change the port to port `64589` or `64590` by editing  `BlazingPizza.Server/Properties/launchSettings.json`, and try again.
-
-![Signed in](https://user-images.githubusercontent.com/1874516/77243353-5d39ff00-6bc6-11ea-8962-8ed862c50c4b.png)
-
-For the OAuth flow to succeed in this example, you *must* be running on `http(s)://localhost:64589` or `http(s)://localhost:64590`, and not any other port. That's because the Twitter application ID in `appsettings.Development.json` references an application configured with those values. To deploy a real application, you'll need to use the [Twitter Developer Console](https://developer.twitter.com/apps) to register a new application, get your own client ID and secret, and register your own callback URLs.
-
-Because the authentication state is persisted by the server in a cookie, you can freely reload the page and the browser will stay logged in. You can also click *Sign out* to hit the server-side endpoint that will clear the authentication cookie then redirect back.
 
 ## Ensuring authentication before placing an order
 
