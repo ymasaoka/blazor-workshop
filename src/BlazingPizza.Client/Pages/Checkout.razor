@@ -39,19 +39,21 @@
 
     async Task RequestNotificationSubscriptionAsync()
     {
-        var tokenResponse = await TokenProvider.RequestAccessToken();
-        if (tokenResponse.TryGetToken(out var token))
+        var tokenResult = await TokenProvider.RequestAccessToken();
+        if (tokenResult.TryGetToken(out var accessToken))
         {
             var subscription = await JSRuntime.InvokeAsync<NotificationSubscription>("blazorPushNotifications.requestSubscription");
             if (subscription != null)
             {
-                var client = CreateAuthenticatedClient(token);
-                await client.PutJsonAsync<object>("notifications/subscribe", subscription);
+                var request = new HttpRequestMessage(HttpMethod.Put, "notifications/subscribe");
+                request.Content = JsonContent.Create(subscription);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
+                await HttpClient.SendAsync(request);
             }
         }
         else
         {
-            NavigationManager.NavigateTo(tokenResponse.RedirectUrl);
+            NavigationManager.NavigateTo(tokenResult.RedirectUrl);
         }
     }
 

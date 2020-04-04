@@ -22,7 +22,7 @@ namespace BlazingPizza.Server
             services.AddMvc()
                 .AddNewtonsoftJson();
 
-            services.AddDbContext<PizzaStoreContext>(options => 
+            services.AddDbContext<PizzaStoreContext>(options =>
                 options.UseSqlite("Data Source=pizza.db"));
 
             services.AddDefaultIdentity<PizzaStoreUser>(options => options.SignIn.RequireConfirmedAccount = true)
@@ -40,6 +40,7 @@ namespace BlazingPizza.Server
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
+                app.UseDatabaseErrorPage();
                 app.UseWebAssemblyDebugging();
             }
             else
