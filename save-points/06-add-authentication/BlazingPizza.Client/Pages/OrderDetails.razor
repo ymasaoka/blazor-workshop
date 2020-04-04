@@ -1,6 +1,7 @@
 ﻿@page "/myorders/{orderId:int}"
 @attribute [Authorize]
 @using System.Threading
+@inject HttpClient HttpClient
 @inject NavigationManager NavigationManager
 @inject IAccessTokenProvider TokenProvider
 @implements IDisposable
@@ -30,9 +31,6 @@
                 <div class="track-order-details">
                     <OrderReview Order="orderWithStatus.Order" />
                 </div>
-                <div class="track-order-map">
-                    <Map Zoom="13" Markers="orderWithStatus.MapMarkers" />
-                </div>
             </div>
         </div>
     }
@@ -56,38 +54,36 @@
 
     private async void PollForUpdates()
     {
-        pollingCancellationToken = new CancellationTokenSource();
-        while (!pollingCancellationToken.IsCancellationRequested)
+        var tokenResult = await TokenProvider.RequestAccessToken();
+        if (tokenResult.TryGetToken(out var accessToken))
         {
-            try
+            pollingCancellationToken = new CancellationTokenSource();
+            while (!pollingCancellationToken.IsCancellationRequested)
             {
-                invalidOrder = false;
-                var tokenResponse = await TokenProvider.RequestAccessToken();
-                if (tokenResponse.TryGetToken(out var token))
+                try
                 {
-                    var client = CreateAuthenticatedClient(token);
-                    orderWithStatus = await client.GetJsonAsync<OrderWithStatus>($"orders/{OrderId}");
+                    invalidOrder = false;
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"orders/{OrderId}");
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
+                    var response = await HttpClient.SendAsync(request);
+                    orderWithStatus = await response.Content.ReadFromJsonAsync<OrderWithStatus>();
                 }
-            }
-            catch (Exception ex)
-            {
-                invalidOrder = true;
-                pollingCancellationToken.Cancel();
-                Console.Error.WriteLine(ex);
-            }
+                catch (Exception ex)
+                {
+                    invalidOrder = true;
+                    pollingCancellationToken.Cancel();
+                    Console.Error.WriteLine(ex);
+                }
 
-            StateHasChanged();
+                StateHasChanged();
 
-            await Task.Delay(4000);
+                await Task.Delay(4000);
+            }
         }
-    }
-
-    private HttpClient CreateAuthenticatedClient(AccessToken token)
-    {
-        var client = new HttpClient();
-        client.BaseAddress = new Uri(NavigationManager.BaseUri);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
-        return client;
+        else
+        {
+            NavigationManager.NavigateTo(tokenResult.RedirectUrl);
+        }
     }
 
     void IDisposable.Dispose()

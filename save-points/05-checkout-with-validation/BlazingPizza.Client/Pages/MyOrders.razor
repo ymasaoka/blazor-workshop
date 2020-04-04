@@ -43,6 +43,17 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        ordersWithStatus = await HttpClient.GetJsonAsync<List<OrderWithStatus>>("orders");
+        var tokenResult = await TokenProvider.RequestAccessToken();
+        if (tokenResult.TryGetToken(out var accessToken))
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "orders");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
+            var response = await HttpClient.SendAsync(request);
+            ordersWithStatus = await response.Content.ReadFromJsonAsync<List<OrderWithStatus>>();
+        }
+        else
+        {
+            NavigationManager.NavigateTo(tokenResult.RedirectUrl);
+        }
     }
 }

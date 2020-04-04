@@ -1,5 +1,6 @@
 ﻿@page "/myorders"
 @attribute [Authorize]
+@inject HttpClient HttpClient
 @inject NavigationManager NavigationManager
 @inject IAccessTokenProvider TokenProvider
 
@@ -33,24 +34,19 @@
 @code {
     async Task<List<OrderWithStatus>> LoadOrders()
     {
-        var tokenResponse = await TokenProvider.RequestAccessToken();
-        if (tokenResponse.TryGetToken(out var token))
+        var ordersWithStatus = new List<OrderWithStatus>();
+        var tokenResult = await TokenProvider.RequestAccessToken();
+        if (tokenResult.TryGetToken(out var accessToken))
         {
-            var client = CreateAuthenticatedClient(token);
-            return await client.GetJsonAsync<List<OrderWithStatus>>("orders");
+            var request = new HttpRequestMessage(HttpMethod.Get, "orders");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
+            var response = await HttpClient.SendAsync(request);
+            ordersWithStatus = await response.Content.ReadFromJsonAsync<List<OrderWithStatus>>();
         }
         else
         {
-            NavigationManager.NavigateTo(tokenResponse.RedirectUrl);
-            return new List<OrderWithStatus>();
+            NavigationManager.NavigateTo(tokenResult.RedirectUrl);
         }
-    }
-
-    private HttpClient CreateAuthenticatedClient(AccessToken token)
-    {
-        var client = new HttpClient();
-        client.BaseAddress = new Uri(NavigationManager.BaseUri);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Value);
-        return client;
+        return ordersWithStatus;
     }
 }

@@ -57,7 +57,7 @@ To get the available list of specials we need to call an API on the backend. Bla
 
 The `@inject` directive essentially defines a new property on the component where the first token specified the property type and the second token specifies the property name. The property is populated for you using dependency injection.
 
-Override the `OnInitializedAsync` method in the `@code` block to retrieve the list of pizza specials. This method is part of the component lifecycle and is called when the component is initialized. Use the `GetJsonAsync<T>()` method to handle deserializing the response JSON:
+Override the `OnInitializedAsync` method in the `@code` block to retrieve the list of pizza specials. This method is part of the component lifecycle and is called when the component is initialized. Use the `GetFromJsonAsync<T>()` method to handle deserializing the response JSON:
 
 ```csharp
 @code {
@@ -65,7 +65,7 @@ Override the `OnInitializedAsync` method in the `@code` block to retrieve the li
 
     protected override async Task OnInitializedAsync()
     {
-        specials = await HttpClient.GetJsonAsync<List<PizzaSpecial>>("specials");
+        specials = await HttpClient.GetFromJsonAsync<List<PizzaSpecial>>("specials");
     }
 }
 ```
